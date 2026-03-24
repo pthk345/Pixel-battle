@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pixel Battle</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Unbounded:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0a0a0f;
+    --surface:  #13131a;
+    --border:   #1e1e2e;
+    --accent:   #ff3f6c;
+    --accent2:  #ffcc00;
+    --text:     #e8e8f0;
+    --muted:    #555570;
+    --green:    #22cc66;
+    --panel-h:  148px;
+    --header-h: 52px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  /* Header */
+  header {
+    height: var(--header-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    flex-shrink: 0;
+    z-index: 10;
+    gap: 8px;
+  }
+  .logo {
+    font-family: ‘Unbounded’, sans-serif;
+    font-weight: 900;
+    font-size: 13px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    flex-shrink: 0;
+  }
+  .header-center {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .online-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background .4s;
+    flex-shrink: 0;
+  }
+  .online-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .online-label { font-size: 10px; color: var(--muted); }
+  .online-label.on { color: var(--green); }
+  .header-right { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+  .cooldown-badge {
+    font-size: 10px; padding: 4px 9px;
+    border-radius: 20px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--muted);
+    transition: all .3s; white-space: nowrap;
+  }
+  .cooldown-badge.ready   { border-color: #22cc6644; color: var(--green); background: #22cc6610; }
+  .cooldown-badge.waiting { border-color: #ff3f6c44; color: var(--accent); background: #ff3f6c10; }
+  .btn-hdr {
+    background: none; border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text);
+    font-family: ‘Space Mono’, monospace;
+    font-size: 10px; padding: 5px 9px; cursor: pointer;
+    transition: border-color .2s, color .2s; white-space: nowrap;
+  }
+  .btn-hdr:active { border-color: var(--accent); color: var(--accent); }
+
+  /* Canvas */
+  #canvas-wrap {
+    flex: 1; overflow: hidden; position: relative;
+    background: #080810;
+  }
+  #pixel-canvas {
+    position: absolute;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #cursor-ring {
+    position: absolute; pointer-events: none;
+    border: 2px solid var(--accent); border-radius: 3px;
+    z-index: 5; display: none; transition: border-color .15s;
+  }
+
+  /* Panel */
+  #panel {
+    height: var(--panel-h);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex; flex-direction: column;
+    padding: 10px 12px 14px; gap: 9px;
+  }
+  .sel-row { display: flex; align-items: center; gap: 10px; }
+  .sel-swatch {
+    width: 34px; height: 34px; border-radius: 9px;
+    border: 2px solid var(--border); flex-shrink: 0;
+    transition: background .15s, box-shadow .15s;
+  }
+  .sel-info { flex: 1; min-width: 0; }
+  .sel-name  { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sel-coords { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .btn-place {
+    font-family: ‘Unbounded’, sans-serif;
+    font-size: 11px; font-weight: 700;
+    padding: 0 16px; height: 36px; border-radius: 10px;
+    border: none; background: linear-gradient(135deg, var(--accent), #cc2255);
+    color: #fff; cursor: pointer;
+    transition: opacity .15s, transform .1s;
+    white-space: nowrap; flex-shrink: 0;
+  }
+  .btn-place:active  { transform: scale(.93); opacity: .85; }
+  .btn-place:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+
+  .palette-scroll {
+    display: flex; gap: 7px; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .palette-scroll::-webkit-scrollbar { display: none; }
+  .color-dot {
+    width: 36px; height: 36px; border-radius: 10px;
+    flex-shrink: 0; cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform .15s, border-color .15s;
+  }
+  .color-dot.active { border-color: #fff; transform: scale(1.18); }
+  .color-dot:active { transform: scale(.88); }
+
+  /* Setup modal */
+  #setup-modal {
+    position: absolute; inset: 0;
+    background: var(--bg); z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 32px 24px; gap: 14px;
+  }
+  .setup-logo {
+    font-family: ‘Unbounded’, sans-serif;
+    font-size: 20px; font-weight: 900;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 4px;
+  }
+  .setup-sub { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.7; }
+  .inp-group { width: 100%; display: flex; flex-direction: column; gap: 5px; }
+  .inp-label { font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .inp-field {
+    width: 100%; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font-family: ‘Space Mono’, monospace;
+    font-size: 12px; padding: 11px 14px; outline: none;
+    transition: border-color .2s;
+  }
+  .inp-field:focus { border-color: var(--accent); }
+  .inp-field::placeholder { color: var(--muted); }
+  .inp-hint { font-size: 10px; color: var(--muted); line-height: 1.6; }
+  .inp-hint a { color: var(--accent2); text-decoration: none; }
+  .btn-connect {
+    width: 100%; font-family: ‘Unbounded’, sans-serif;
+    font-size: 12px; font-weight: 700; padding: 14px;
+    border-radius: 12px; border: none;
+    background: linear-gradient(135deg, var(--accent), #cc2255);
+    color: #fff; cursor: pointer; transition: opacity .2s;
+  }
+  .btn-connect:active { opacity: .8; }
+  .setup-status { font-size: 11px; color: var(--muted); min-height: 15px; text-align: center; }
+  .setup-status.err { color: var(--accent); }
+  .setup-status.ok  { color: var(--green); }
+
+  /* Toast */
+  #toast {
+    position: absolute;
+    top: calc(var(--header-h) + 10px);
+    left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 20px; padding: 7px 16px;
+    font-size: 11px; white-space: nowrap;
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s; z-index: 20;
+  }
+  #toast.show { opacity: 1; }
+
+  /* Loading */
+  #loading {
+    position: absolute; inset: 0;
+    background: var(--bg); z-index: 80;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+  }
+  #loading.hidden { display: none; }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 11px; color: var(--muted); }
+
+  /* Ripple */
+  @keyframes ripple {
+    0%   { transform: scale(1); opacity: .7; }
+    100% { transform: scale(2.8); opacity: 0; }
+  }
+  .px-ripple {
+    position: absolute; pointer-events: none;
+    border-radius: 2px; border: 2px solid #fff;
+    animation: ripple .45s ease forwards; z-index: 6;
+  }
+</style>
+</head>
+<body>
+
+<!-- Setup modal -->
+<div id="setup-modal">
+  <div class="setup-logo">PIXEL BATTLE</div>
+  <div class="setup-sub">
+    Введи Public Key из<br>
+    <a href="https://liveblocks.io/dashboard" target="_blank" style="color:var(--accent2)">liveblocks.io → Dashboard → API Keys</a>
+  </div>
+
+  <div class="inp-group">
+    <div class="inp-label">Liveblocks Public Key</div>
+    <input class="inp-field" id="inp-key" type="text"
+      placeholder="pk_dev_xxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+    <div class="inp-hint">
+      1. Зайди на <a href="https://liveblocks.io" target="_blank">liveblocks.io</a> → Sign up (бесплатно)<br>
+      2. Создай проект → скопируй <b>Public Key</b> (pk_dev_…)<br>
+      3. Вставь сюда и нажми Подключить
+    </div>
+  </div>
+
+  <div class="setup-status" id="setup-status"></div>
+  <button class="btn-connect" onclick="connectLiveblocks()">Подключиться →</button>
+  <div style="font-size:10px;color:var(--muted);text-align:center">Ключ сохранится в localStorage</div>
+</div>
+
+<!-- Loading -->
+<div id="loading" class="hidden">
+  <div class="spinner"></div>
+  <div class="loading-text">Загружаю холст…</div>
+</div>
+
+<!-- Main UI -->
+<header>
+  <div class="logo">PIXEL BATTLE</div>
+  <div class="header-center">
+    <div class="online-dot" id="online-dot"></div>
+    <span class="online-label" id="online-label">offline</span>
+  </div>
+  <div class="header-right">
+    <div class="cooldown-badge ready" id="cd-badge">✓ Готово</div>
+    <button class="btn-hdr" onclick="showSetup()" style="padding:5px 6px">⚙</button>
+  </div>
+</header>
+
+<div id="canvas-wrap">
+  <canvas id="pixel-canvas"></canvas>
+  <div id="cursor-ring"></div>
+</div>
+
+<div id="panel">
+  <div class="sel-row">
+    <div class="sel-swatch" id="sel-swatch"></div>
+    <div class="sel-info">
+      <div class="sel-name" id="sel-name">—</div>
+      <div class="sel-coords" id="sel-coords">Нажми на холст</div>
+    </div>
+    <button class="btn-place" id="btn-place" onclick="placePixel()">ПОСТАВИТЬ</button>
+  </div>
+  <div class="palette-scroll" id="palette"></div>
+</div>
+
+<div id="toast"></div>
+
+<script type="module">
+// ════════════════════════════════════════════════════════
+//  CONFIG
+// ════════════════════════════════════════════════════════
+const W = 128, H = 128, PIXEL = 6, COOLDOWN = 1000;
+const ROOM_ID = 'pixel-battle-main';
+
+const PALETTE = [ /* ... тот же массив цветов ... */ 
+  { name:'Белый',        hex:'#ffffff' },
+  { name:'Чёрный',       hex:'#141414' },
+  { name:'Красный',      hex:'#dc3232' },
+  { name:'Оранжевый',    hex:'#ff961e' },
+  { name:'Жёлтый',       hex:'#ffdc00' },
+  { name:'Зелёный',      hex:'#28b450' },
+  { name:'Синий',        hex:'#3278f0' },
+  { name:'Фиолетовый',   hex:'#9632dc' },
+  { name:'Розовый',      hex:'#ff64aa' },
+  { name:'Голубой',      hex:'#50d2e6' },
+  { name:'Коричневый',   hex:'#825028' },
+  { name:'Серый',        hex:'#969696' },
+  { name:'Малиновый',    hex:'#c80050' },
+  { name:'Лайм',         hex:'#8cf03c' },
+  { name:'Тёмно-синий',  hex:'#003282' },
+  { name:'Тёмно-серый',  hex:'#3c3c3c' },
+];
+
+// TELEGRAM + USER
+const tg      = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+const tgUser  = tg?.initDataUnsafe?.user;
+const MY_ID   = tgUser ? String(tgUser.id) : 'demo_' + Math.random().toString(36).slice(2,8);
+const MY_NAME = tgUser ? (tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '')) : 'Гость';
+
+// CANVAS SETUP
+const cnv  = document.getElementById('pixel-canvas');
+const ctx2 = cnv.getContext('2d');
+cnv.width  = W * PIXEL;
+cnv.height = H * PIXEL;
+
+const imgData = ctx2.createImageData(W * PIXEL, H * PIXEL);
+const buf32   = new Uint32Array(imgData.data.buffer);
+
+let canvas_data = new Uint8Array(W * H);
+
+function hexToAbgr(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return (255 << 24) | ((n & 0xff) << 16) | (((n >> 8) & 0xff) << 8) | ((n >> 16) & 0xff);
+}
+const PAL_ABGR = PALETTE.map(c => hexToAbgr(c.hex));
+
+function fillBuf(px, py, ci) {
+  const abgr = PAL_ABGR[ci];
+  for (let dy = 0; dy < PIXEL; dy++) {
+    const row = ((py * PIXEL + dy) * W * PIXEL) + px * PIXEL;
+    for (let dx = 0; dx < PIXEL; dx++) buf32[row + dx] = abgr;
+  }
+}
+
+function redrawAll() {
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      fillBuf(x, y, canvas_data[y * W + x]);
+  ctx2.putImageData(imgData, 0, 0);
+  drawGrid();
+}
+
+function drawGrid() {
+  ctx2.save();
+  ctx2.globalAlpha = 0.055;
+  ctx2.strokeStyle = '#ffffff';
+  ctx2.lineWidth = 0.5;
+  for (let x = 0; x <= W; x++) { ctx2.beginPath(); ctx2.moveTo(x*PIXEL,0); ctx2.lineTo(x*PIXEL,H*PIXEL); ctx2.stroke(); }
+  for (let y = 0; y <= H; y++) { ctx2.beginPath(); ctx2.moveTo(0,y*PIXEL); ctx2.lineTo(W*PIXEL,y*PIXEL); ctx2.stroke(); }
+  ctx2.restore();
+}
+
+function applyPixel(x, y, ci, skipBroadcast) {
+  canvas_data[y * W + x] = ci;
+  fillBuf(x, y, ci);
+  ctx2.putImageData(imgData, 0, 0);
+  drawGrid();
+  if (!skipBroadcast) spawnRipple(x, y, ci);
+}
+
+// PAN & ZOOM — ИЗМЕНЕНИЯ ЗДЕСЬ
+const wrap = document.getElementById('canvas-wrap');
+let camX = 0, camY = 0, camZ = 2;
+const MIN_Z = 0.15;   // ← теперь можно сильно отдалять
+const MAX_Z = 24;
+
+function applyTransform() {
+  const cw = W * PIXEL * camZ;
+  const ch = H * PIXEL * camZ;
+  const ww = wrap.clientWidth;
+  const wh = wrap.clientHeight;
+
+  // Ограничение, чтобы холст не уходил слишком далеко за экран
+  camX = Math.max(ww * 0.5 - cw, Math.min(camX, ww * 0.5));
+  camY = Math.max(wh * 0.5 - ch, Math.min(camY, wh * 0.5));
+
+  cnv.style.transform = `translate(${camX}px, ${camY}px) scale(${camZ})`;
+  updateRing();
+}
+
+function centerCanvas() {
+  const scaleFit = Math.min(wrap.clientWidth / (W * PIXEL), wrap.clientHeight / (H * PIXEL)) * 0.95;
+  camZ = Math.max(MIN_Z, Math.min(MAX_Z, scaleFit));
+  const cw = W * PIXEL * camZ;
+  const ch = H * PIXEL * camZ;
+  camX = (wrap.clientWidth - cw) / 2;
+  camY = (wrap.clientHeight - ch) / 2;
+  applyTransform();
+}
+
+function screenToPixel(sx, sy) {
+  const r = wrap.getBoundingClientRect();
+  return [
+    Math.floor((sx - r.left - camX) / camZ / PIXEL),
+    Math.floor((sy - r.top  - camY) / camZ / PIXEL),
+  ];
+}
+
+// Touch, Mouse и Wheel обработчики остаются прежними (только MIN_Z уже изменён выше)
+let isPinch=false, pinchDist=0, panStart=null, moved=false;
+wrap.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches;
+  if (t.length === 1) { panStart={x:t[0].clientX,y:t[0].clientY,cx:camX,cy:camY}; moved=false; isPinch=false; }
+  else if (t.length === 2) { isPinch=true; pinchDist=Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY); panStart=null; }
+}, {passive:false});
+
+wrap.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches;
+  if (t.length === 2) {
+    isPinch=true;
+    const d=Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+    const mx=(t[0].clientX+t[1].clientX)/2, my=(t[0].clientY+t[1].clientY)/2;
+    const r=wrap.getBoundingClientRect();
+    const lx=mx-r.left, ly=my-r.top;
+    const nz=Math.max(MIN_Z, Math.min(MAX_Z, camZ * (d / pinchDist)));
+    camX = lx - (lx - camX) * (nz / camZ);
+    camY = ly - (ly - camY) * (nz / camZ);
+    camZ = nz;
+    pinchDist = d;
+    applyTransform();
+  } else if (t.length===1 && panStart && !isPinch) {
+    const dx = t[0].clientX - panStart.x;
+    const dy = t[0].clientY - panStart.y;
+    if (Math.hypot(dx,dy)>6) moved=true;
+    if (moved) { 
+      camX = panStart.cx + dx; 
+      camY = panStart.cy + dy; 
+      applyTransform(); 
+    } else {
+      const [px,py] = screenToPixel(t[0].clientX, t[0].clientY);
+      if (px>=0&&px<W&&py>=0&&py<H) { hovX=px; hovY=py; updateRing(); updateCoords(); }
+    }
+  }
+}, {passive:false});
+
+wrap.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (!moved && !isPinch && e.changedTouches.length===1) {
+    const [px,py] = screenToPixel(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    if (px>=0&&px<W&&py>=0&&py<H) { hovX=px; hovY=py; updateRing(); updateCoords(); }
+  }
+  if (e.touches.length < 2) isPinch = false;
+  if (e.touches.length === 0) panStart = null;
+}, {passive:false});
+
+let mdown=false, mmoved=false, mstart=null;
+wrap.addEventListener('mousedown', e => { mdown=true; mmoved=false; mstart={x:e.clientX, y:e.clientY, cx:camX, cy:camY}; });
+wrap.addEventListener('mousemove', e => {
+  if (!mdown) {
+    const [px,py] = screenToPixel(e.clientX, e.clientY);
+    if (px>=0&&px<W&&py>=0&&py<H) { hovX=px; hovY=py; updateRing(); updateCoords(); }
+    return;
+  }
+  const dx = e.clientX - mstart.x;
+  const dy = e.clientY - mstart.y;
+  if (Math.hypot(dx,dy)>4) mmoved = true;
+  if (mmoved) { camX = mstart.cx + dx; camY = mstart.cy + dy; applyTransform(); }
+});
+wrap.addEventListener('mouseup', e => {
+  if (!mmoved) {
+    const [px,py] = screenToPixel(e.clientX, e.clientY);
+    if (px>=0&&px<W&&py>=0&&py<H) { hovX=px; hovY=py; updateRing(); updateCoords(); }
+  }
+  mdown = false;
+});
+wrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = wrap.getBoundingClientRect();
+  const lx = e.clientX - r.left;
+  const ly = e.clientY - r.top;
+  const nz = Math.max(MIN_Z, Math.min(MAX_Z, camZ * (e.deltaY < 0 ? 1.13 : 0.9)));
+  camX = lx - (lx - camX) * (nz / camZ);
+  camY = ly - (ly - camY) * (nz / camZ);
+  camZ = nz;
+  applyTransform();
+}, {passive:false});
+
+// UI STATE
+let hovX=-1, hovY=-1, selColor=2, lastPlace=0;
+
+const ring = document.getElementById('cursor-ring');
+function updateRing() {
+  if (hovX<0||hovY<0) { ring.style.display='none'; return; }
+  const s = PIXEL * camZ;
+  ring.style.display = 'block';
+  ring.style.left = (camX + hovX * PIXEL * camZ - 2) + 'px';
+  ring.style.top  = (camY + hovY * PIXEL * camZ - 2) + 'px';
+  ring.style.width = (s + 4) + 'px';
+  ring.style.height = (s + 4) + 'px';
+  ring.style.borderColor = PALETTE[selColor].hex;
+}
+
+function updateCoords() {
+  document.getElementById('sel-coords').textContent = 
+    hovX >= 0 ? `x:${hovX}  y:${hovY}` : 'Нажми на холст';
+}
+
+function selectColor(i) {
+  selColor = i;
+  document.querySelectorAll('.color-dot').forEach((d,j) => d.classList.toggle('active', j===i));
+  const sw = document.getElementById('sel-swatch');
+  sw.style.background = PALETTE[i].hex;
+  sw.style.boxShadow = `0 0 12px ${PALETTE[i].hex}99`;
+  document.getElementById('sel-name').textContent = PALETTE[i].name;
+  updateRing();
+}
+
+function buildPalette() {
+  const el = document.getElementById('palette'); 
+  el.innerHTML = '';
+  PALETTE.forEach((c,i) => {
+    const d = document.createElement('div');
+    d.className = 'color-dot' + (i===selColor ? ' active' : '');
+    d.style.background = c.hex; 
+    d.title = c.name;
+    d.addEventListener('click', () => selectColor(i));
+    el.appendChild(d);
+  });
+}
+
+let cdInterval = null;
+function updateCooldown() {
+  clearInterval(cdInterval);
+  const badge = document.getElementById('cd-badge');
+  const btn = document.getElementById('btn-place');
+  function tick() {
+    const cd = COOLDOWN - (Date.now() - lastPlace);
+    if (cd <= 0) {
+      badge.className = 'cooldown-badge ready';
+      badge.textContent = '✓ Готово';
+      btn.disabled = false;
+      clearInterval(cdInterval);
+    } else {
+      badge.className = 'cooldown-badge waiting';
+      badge.textContent = `⏳ ${Math.ceil(cd/1000)}с`;
+      btn.disabled = true;
+    }
+  }
+  tick(); 
+  cdInterval = setInterval(tick, 500);
+}
+
+let toastT = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; 
+  t.classList.add('show');
+  clearTimeout(toastT); 
+  toastT = setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function spawnRipple(px, py, ci) {
+  const s = PIXEL * camZ;
+  const el = document.createElement('div');
+  el.className = 'px-ripple';
+  el.style.left = (camX + px * PIXEL * camZ) + 'px';
+  el.style.top  = (camY + py * PIXEL * camZ) + 'px';
+  el.style.width = s + 'px';
+  el.style.height = s + 'px';
+  el.style.borderColor = PALETTE[ci]?.hex || '#fff';
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 500);
+}
+
+// LIVEBLOCKS
+let client = null, room = null, storage = null;
+
+window.connectLiveblocks = async function() {
+  const key = document.getElementById('inp-key').value.trim();
+  const st  = document.getElementById('setup-status');
+  if (!key.startsWith('pk_')) {
+    st.className = 'setup-status err';
+    st.textContent = 'Ключ должен начинаться с pk_dev_ или pk_prod_';
+    return;
+  }
+  st.className = 'setup-status'; 
+  st.textContent = 'Подключаюсь…';
+  try {
+    localStorage.setItem('lb_key', key);
+    await initLiveblocks(key);
+    st.className = 'setup-status ok'; 
+    st.textContent = '✓ Подключено!';
+    setTimeout(() => document.getElementById('setup-modal').style.display = 'none', 600);
+  } catch(e) {
+    st.className = 'setup-status err';
+    st.textContent = 'Ошибка: ' + (e.message || 'проверь ключ');
+  }
+};
+
+async function initLiveblocks(publicKey) {
+  document.getElementById('loading').classList.remove('hidden');
+
+  import('https://esm.sh/@liveblocks/client@2').then(({ createClient }) => {
+    client = createClient({ publicApiKey: publicKey });
+
+    const { room: r } = client.enterRoom(ROOM_ID, {
+      initialPresence: { userId: MY_ID, name: MY_NAME, cursor: null },
+      initialStorage: { canvas: btoa(String.fromCharCode(...new Uint8Array(W*H))) },
+    });
+    room = r;
+    room.getStorage().then(s => {
+      storage = s;
+
+      const storedCanvas = storage.root.get('canvas');
+      if (storedCanvas) {
+        try {
+          const decoded = atob(storedCanvas);
+          for (let i = 0; i < decoded.length && i < W*H; i++)
+            canvas_data[i] = decoded.charCodeAt(i);
+        } catch(e) {}
+      }
+      redrawAll();
+      document.getElementById('loading').classList.add('hidden');
+    });
+
+    room.subscribe('others', others => {
+      const cnt = others.length + 1;
+      document.getElementById('online-dot').classList.add('on');
+      const lbl = document.getElementById('online-label');
+      lbl.classList.add('on');
+      lbl.textContent = cnt + ' онлайн';
+    });
+
+    room.subscribe('event', ({ event }) => {
+      if (event.type === 'pixel') {
+        const { x, y, ci, userId } = event;
+        if (userId === MY_ID) return;
+        applyPixel(x, y, ci, true);
+        spawnRipple(x, y, ci);
+      }
+    });
+  });
+}
+
+window.placePixel = async function() {
+  if (hovX < 0 || hovY < 0) { showToast('Сначала выбери пиксель на холсте'); return; }
+  const cd = COOLDOWN - (Date.now() - lastPlace);
+  if (cd > 0) { showToast(`⏳ Подожди ещё ${Math.ceil(cd/1000)}с`); return; }
+  if (!room || !storage) { showToast('Нет соединения с Liveblocks'); return; }
+
+  const x = hovX, y = hovY, ci = selColor;
+
+  applyPixel(x, y, ci, true);
+  spawnRipple(x, y, ci);
+  lastPlace = Date.now();
+  localStorage.setItem('pb_last_' + MY_ID, String(lastPlace));
+  updateCooldown();
+  tg?.HapticFeedback?.impactOccurred('light');
+  showToast(`✓ (${x},${y}) → ${PALETTE[ci].name}`);
+
+  room.broadcastEvent({ type:'pixel', x, y, ci, userId: MY_ID });
+
+  canvas_data[y*W + x] = ci;
+  const encoded = btoa(String.fromCharCode(...canvas_data));
+  storage.root.set('canvas', encoded);
+};
+
+window.showSetup = function() {
+  document.getElementById('setup-modal').style.display = 'flex';
+};
+
+// BOOT
+buildPalette();
+selectColor(2);
+centerCanvas();
+lastPlace = Number(localStorage.getItem('pb_last_' + MY_ID) || '0');
+updateCooldown();
+new ResizeObserver(() => applyTransform()).observe(wrap);
+
+const savedKey = localStorage.getItem('lb_key');
+if (savedKey) {
+  document.getElementById('inp-key').value = savedKey;
+  initLiveblocks(savedKey).catch(() => {
+    document.getElementById('setup-modal').style.display = 'flex';
+  });
+}
+</script>
+</body>
+</html>
